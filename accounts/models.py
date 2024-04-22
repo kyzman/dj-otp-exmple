@@ -46,11 +46,19 @@ class MobilePhoneOnlyUser(AbstractUser):
 
     objects = PhoneUserManager()
 
+    class Meta(AbstractUser.Meta):
+        constraints = [
+            models.CheckConstraint(check=models.Q(phone__regex=r"^9\d{9}$"), name="CK_phone"),
+        ]
+
 
 class Profile(models.Model):
     user = models.OneToOneField(get_user_model(), on_delete=models.CASCADE, related_name='Profile')
     otp = models.IntegerField(null=True, blank=True)
     otptime = models.DateTimeField(null=True, blank=True)
+    otpattempts = models.IntegerField(null=True, blank=True)
+    invite = models.CharField(max_length=6)
+    invited = models.CharField(max_length=6, null=True, blank=True)
 
     def __str__(self):
         return f"{self.user}"

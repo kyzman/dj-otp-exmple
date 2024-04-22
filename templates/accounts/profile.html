@@ -2,11 +2,29 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <title>{{title}} {{request.user}}</title>
 </head>
 <body>
-    {{request.user}}
+    <form method="post">
+    {% csrf_token %}
+    <div class="form-error">{{ form.non_field_errors }}</div>
+    {% for f in form%}
+    <p><label class="form-label" for="{{ f.id_for_label }}">{{f.label}}: </label>{{ f }}</p>
+    <div class="form-error">{{ f.errors }}</div>
+    {% endfor %}
+    <button type="submit">Изменить</button>
+</form>
     <br>
+        <p>
+            Ваш пригласительный код: <b>{{invite}}</b>
+        </p>
+    <br>
+    Ваши последователи(которые ввели ваш пригласительный код):
+    <ul>
+    {% for follower in followers %}
+        <li>+7{{follower.user__phone}}</li>
+    {% endfor %}
+    </ul>
     <a href="{% url 'logout' %}">Выйти</a>
 </body>
 </html>

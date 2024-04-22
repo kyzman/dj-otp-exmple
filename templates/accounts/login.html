@@ -1,5 +1,9 @@
+{% if error %}
+    <p style="color: red;">{{msg}}</p>
+{% endif %}
 <form method="POST">
     {% csrf_token %}
-    +7 <input type="text" name="phone" placeholder="phone" required>
-    <input type="submit" value="Submit">
+    <p>Tel. +7 <input type="text" name="phone" placeholder="phone" required></p>
+    <p>Code: <input type="text" name="invited" placeholder="invite code"></p>
+    <button type="submit">Отправить</button>
 </form>
