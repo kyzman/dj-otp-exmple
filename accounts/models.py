@@ -1,9 +1,8 @@
+from django.contrib.auth import get_user_model
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 from django.db import models
-
-# Create your models here.
 
 
 class PhoneUserManager(BaseUserManager):
@@ -46,3 +45,12 @@ class MobilePhoneOnlyUser(AbstractUser):
     REQUIRED_FIELDS = []
 
     objects = PhoneUserManager()
+
+
+class Profile(models.Model):
+    user = models.OneToOneField(get_user_model(), on_delete=models.CASCADE, related_name='Profile')
+    otp = models.IntegerField(null=True, blank=True)
+    otptime = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.user}"
