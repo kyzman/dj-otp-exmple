@@ -4,6 +4,8 @@ from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 from django.db import models
 
+from accounts.utils import generate_code
+
 
 class PhoneUserManager(BaseUserManager):
     """Define a model manager for User model with no username field."""
@@ -57,7 +59,7 @@ class Profile(models.Model):
     otp = models.IntegerField(null=True, blank=True)
     otptime = models.DateTimeField(null=True, blank=True)
     otpattempts = models.IntegerField(null=True, blank=True)
-    invite = models.CharField(max_length=6)
+    invite = models.CharField(max_length=6, unique=True, default=generate_code)
     invited = models.CharField(max_length=6, null=True, blank=True)
 
     def __str__(self):

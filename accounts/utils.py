@@ -2,6 +2,7 @@ import random
 from typing import NoReturn
 from string import ascii_lowercase, digits
 
+
 class OtpSender:
     phone = None
     otp = None
@@ -11,7 +12,7 @@ class OtpSender:
         self.otp = otp
 
     def send_otp_on_phone(self) -> NoReturn:
-        print(f"You one time password {self.otp} must be send to {self.phone}")  # bung for this func
+        print(f"===> You one time password {self.otp} must be send to {self.phone}")  # bung for this func
 
 
 def generate_code(length=6) -> str:
@@ -22,5 +23,4 @@ def generate_code(length=6) -> str:
         else:
             result += random.choice(ascii_lowercase)
     return result
-
 
