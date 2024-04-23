@@ -67,6 +67,9 @@ class ProfileUser(LoginRequiredMixin, UpdateView):
     def get_invite_code(self):
         return Profile.objects.get(user=self.request.user).invite
 
+    def get_invited(self):
+        return Profile.objects.get(user=self.request.user).invited
+
     def get_all_followers(self, invite_code):
         return list(Profile.objects.filter(invited=invite_code).all().values('user__phone'))
 
@@ -76,11 +79,25 @@ class ProfileUser(LoginRequiredMixin, UpdateView):
         context['followers'] = self.get_all_followers(context['invite'])
         return context
 
+    def get_initial(self):
+        initial = super(ProfileUser, self).get_initial()
+        initial['invited'] = self.get_invited()
+        return initial
+
     def get_success_url(self):
         return reverse_lazy('profile', args=[self.request.user.pk])
 
     def get_object(self, queryset=None):
         return self.request.user
+
+    def form_valid(self, form):
+        user = form.save()
+        invited_code = form.data.get('invited')
+        if invited_code:
+            profile = Profile.objects.get(user=user)
+            profile.invited = invited_code
+            profile.save()
+        return redirect('profile')
 
 
 def otp(request: WSGIRequest, phone):
