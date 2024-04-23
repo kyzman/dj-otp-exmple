@@ -11,6 +11,7 @@ from django.views.generic import UpdateView
 from accounts.forms import ProfileUserForm
 from accounts.utils import OtpSender, generate_code
 from accounts.models import Profile
+from config import settings
 
 
 def login_view(request: WSGIRequest):
@@ -31,27 +32,30 @@ def login_view(request: WSGIRequest):
                     error = True
                     message = f'Ошибка создания записи {err}'
             else:  # если не корректное приглашение
-                print('error')
                 error = True
                 message = "Введён не корректный пригласительный код!"
         if error:
             pass
         else:
-            if not profile.invited and valid_invite:
-                profile.invited = invited
+            if last_otp_time := profile.otptime:
+                timedelta = datetime.datetime.utcnow() - last_otp_time.replace(tzinfo=None)
+            else:
+                timedelta = datetime.timedelta(seconds=settings.OTP_RETRY_TIMEOUT+1)
+            if not last_otp_time or timedelta.seconds > settings.OTP_RETRY_TIMEOUT:
+                if not profile.invited and valid_invite:
+                    profile.invited = invited
+                profile.otp = random.randint(999, 9999)
+                profile.otptime = datetime.datetime.utcnow()
+                profile.otpattempts = settings.OTP_ATTEMPTS
+                profile.save()
+                sender = OtpSender(user.phone, profile.otp).send_otp_on_phone()
 
-            profile.otp = random.randint(999, 9999)
-            profile.otptime = datetime.datetime.utcnow()
-            profile.save()
-            sender = OtpSender(user.phone, profile.otp).send_otp_on_phone()
+                return redirect(f'/otp/{user.phone}')
+            else:
+                error = True
+                message = "Превышено время повторной выдачи пароля. Попробуйте позже!"
 
-            return redirect(f'/otp/{user.phone}')
-
-    return render(request, 'accounts/login.html',{'error': error, 'msg': message})
-
-
-def profile_view(request: WSGIRequest):
-    return render(request, 'accounts/profile.html')
+    return render(request, 'accounts/login.html', {'error': error, 'msg': message})
 
 
 class ProfileUser(LoginRequiredMixin, UpdateView):
@@ -80,16 +84,34 @@ class ProfileUser(LoginRequiredMixin, UpdateView):
 
 
 def otp(request: WSGIRequest, phone):
+    error = False
+    message = ''
     if request.method == 'POST':
         otp = int(request.POST.get('otp'))
         profile = Profile.objects.get(user=get_user_model().objects.get(phone=phone))
-        if otp == profile.otp:
-            login(request, profile.user)
-            return redirect('/profile/')
+        profile.otpattempts -= 1
+        timedelta = datetime.datetime.utcnow() - profile.otptime.replace(tzinfo=None)
+        try:
+            profile.save()
+            if timedelta.seconds < settings.OTP_LIFETIME:
+                if profile.otpattempts > 0:
+                    if otp == profile.otp:
+                        login(request, profile.user)
+                        return redirect('/profile/')
+                    else:
+                        error = True
+                        message = f'Введены не корректные данные'
+                else:
+                    error = True
+                    message = f'Исчерпано количество попыток! <a href="{reverse_lazy("home")}">Ещё раз</a>'
+            else:
+                error = True
+                message = f'Время жизни пароля истекло! <a href="{reverse_lazy("home")}">Ещё раз</a>'
+        except Exception as err:
+            error = True
+            message = f'Ошибка регистрации {err}'
 
-        return redirect(f'/otp/{phone}')
-
-    return render(request, 'accounts/otp.html')
+    return render(request, 'accounts/otp.html', {'error': error, 'msg': message})
 
 
 def logout_view(request: WSGIRequest):

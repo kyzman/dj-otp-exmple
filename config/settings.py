@@ -124,3 +124,15 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Таймаут (в секундах) актуальности кратковременного пароля
+
+OTP_LIFETIME = 30
+
+# Количество попыток ввода пароля
+
+OTP_ATTEMPTS = 3
+
+# таймаут между попытками входа (повторной выдачей OTP)
+
+OTP_RETRY_TIMEOUT = 30
