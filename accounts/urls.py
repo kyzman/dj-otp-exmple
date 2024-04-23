@@ -9,4 +9,5 @@ router.register(r'profile', views.ProfileAPIView)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('login/<int:phone>/', views.LoginAPIView.as_view()),
 ]

@@ -10,6 +10,12 @@ class UserSerializer(serializers.ModelSerializer):
         model = get_user_model()
         fields = ('phone', 'email', 'first_name', 'last_name')
 
+class UserPhoneSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = get_user_model()
+        fields = ('phone',)
+
 
 class ProfileSerializer(serializers.ModelSerializer):
     invite = serializers.CharField(read_only=True)
@@ -21,3 +27,11 @@ class ProfileSerializer(serializers.ModelSerializer):
         model = Profile
         fields = ('pk', 'user', 'invite', 'invited')
         # read_only_fields = ('pk', 'invite',)
+
+
+class OTPSerializer(serializers.ModelSerializer):
+    user = UserPhoneSerializer(read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = ('user', 'otp')

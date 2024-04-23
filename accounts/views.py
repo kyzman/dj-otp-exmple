@@ -8,13 +8,13 @@ from django.shortcuts import render, redirect
 from django.urls import reverse_lazy
 from django.views.generic import UpdateView
 
-from rest_framework import mixins, viewsets, status
+from rest_framework import mixins, viewsets, status, generics
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from accounts.forms import ProfileUserForm
 from accounts.permissions import IsOwnerOrReadOnly
-from accounts.serializers import ProfileSerializer
+from accounts.serializers import ProfileSerializer, OTPSerializer
 from accounts.utils import OtpSender
 from accounts.models import Profile
 from config import settings
@@ -187,3 +187,35 @@ class ProfileAPIView(mixins.CreateModelMixin,
 
     def perform_update(self, serializer):
         print(serializer.data)
+
+
+class LoginAPIView(generics.CreateAPIView):
+    queryset = Profile.objects.all()
+    serializer_class = OTPSerializer
+    # lookup_field = 'user'
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        profile = self.queryset.get(user=get_user_model().objects.get(phone=kwargs.get('phone')))
+        profile.otpattempts -= 1
+        timedelta = datetime.datetime.utcnow() - profile.otptime.replace(tzinfo=None)
+        try:
+            profile.save()
+            if timedelta.seconds < settings.OTP_LIFETIME:
+                if profile.otpattempts > 0:
+                    if int(request.data.get('otp')) == profile.otp:
+                        print('must login')
+                        login(self.request, user=profile.user)
+                    else:
+                        raise ValidationError(f'Введены не корректные данные')
+                else:
+                    raise ValidationError(f'Исчерпано количество попыток!')
+            else:
+                raise ValidationError(f'Время жизни пароля истекло!')
+        except Exception as err:
+            raise ValidationError(f'Ошибка регистрации {err}')
+
+        headers = self.get_success_headers(serializer.data)
+        print(dict(serializer.data))
+        return Response({'detail': 'login succesful'}, status=status.HTTP_200_OK, headers=headers)

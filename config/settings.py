@@ -127,7 +127,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Таймаут (в секундах) актуальности кратковременного пароля
 
-OTP_LIFETIME = 30
+OTP_LIFETIME = 60
 
 # Количество попыток ввода пароля
 
@@ -135,4 +135,4 @@ OTP_ATTEMPTS = 3
 
 # таймаут между попытками входа (повторной выдачей OTP)
 
-OTP_RETRY_TIMEOUT = 30
+OTP_RETRY_TIMEOUT = 120
