@@ -1,13 +1,9 @@
-from django.urls import path, include
-
-from rest_framework import routers
+from django.urls import path
 
 from accounts import views
 
-router = routers.DefaultRouter()
-router.register(r'profile', views.ProfileAPIView)
 
 urlpatterns = [
-    path('', include(router.urls)),
-    path('login/<int:phone>/', views.LoginAPIView.as_view()),
+    path('login/', views.LoginOrCreateAPIView.as_view()),
+    path('login/<int:phone>/', views.LoginOTPAPIView.as_view(), name='OTPLogin'),
 ]

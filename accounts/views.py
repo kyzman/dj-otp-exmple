@@ -8,13 +8,14 @@ from django.shortcuts import render, redirect
 from django.urls import reverse_lazy
 from django.views.generic import UpdateView
 
-from rest_framework import mixins, viewsets, status, generics
-from rest_framework.exceptions import ValidationError
+from rest_framework import status, generics, permissions
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
+from rest_framework.authentication import SessionAuthentication
 
 from accounts.forms import ProfileUserForm
 from accounts.permissions import IsOwnerOrReadOnly
-from accounts.serializers import ProfileSerializer, OTPSerializer
+from accounts.serializers import OTPSerializer, LoginUserSerializer
 from accounts.utils import OtpSender
 from accounts.models import Profile
 from config import settings
@@ -30,6 +31,22 @@ def get_invited(user) -> str:
 
 def get_all_followers(invite_code) -> list:
     return list(Profile.objects.filter(invited=invite_code).all().values('user__phone'))
+
+
+class CsrfExemptSessionAuthentication(SessionAuthentication):
+    def enforce_csrf(self, request):
+        return None
+
+
+class MyApiView(generics.GenericAPIView):
+    permission_classes = (permissions.AllowAny,)
+    authentication_classes = (CsrfExemptSessionAuthentication,)
+
+    def get_success_headers(self, data):
+        try:
+            return {'Location': str(data[api_settings.URL_FIELD_NAME])}
+        except (TypeError, KeyError):
+            return {}
 
 
 def login_view(request: WSGIRequest):
@@ -109,7 +126,7 @@ class ProfileUser(LoginRequiredMixin, UpdateView):
         return redirect('profile')
 
 
-def otp(request: WSGIRequest, phone):
+def otp_request(request: WSGIRequest, phone):
     error = False
     message = ''
     if request.method == 'POST':
@@ -147,54 +164,12 @@ def logout_view(request: WSGIRequest):
 
 # ============== API handlers =================
 
-#
-# class UserAPIView(generics.ListAPIView):
-#     queryset = get_user_model().objects.all()
-#     serializer_class = UserSerializer
-#
 
-class ProfileAPIView(mixins.CreateModelMixin,
-                     mixins.RetrieveModelMixin,
-                     mixins.UpdateModelMixin,
-                     mixins.DestroyModelMixin,
-                     mixins.ListModelMixin,
-                     viewsets.GenericViewSet):
-
-    queryset = Profile.objects.all()
-    serializer_class = ProfileSerializer
-    permission_classes = [IsOwnerOrReadOnly,]
-    # lookup_field = "user__phone"
-
-    def perform_create(self, serializer):
-        data = serializer.data
-        invited = data.get('invited')
-        phone = data.get('user').get('phone')
-        valid_invite = Profile.objects.filter(invite=invited)
-        if valid_invite or not invited:  # если приглашение корректное или его нет
-            try:
-                user = get_user_model().objects.create(phone=phone)
-                profile = Profile.objects.create(user=user, invited=invited)
-            except Exception as err:
-                raise ValidationError(err)
-        else:  # если не корректное приглашение
-            raise ValidationError("Введён не корректный пригласительный код!")
-
-        profile.otp = random.randint(999, 9999)
-        profile.otptime = datetime.datetime.utcnow()
-        profile.otpattempts = settings.OTP_ATTEMPTS
-        profile.save()
-        sender = OtpSender(user.phone, profile.otp).send_otp_on_phone()
-
-    def perform_update(self, serializer):
-        print(serializer.data)
-
-
-class LoginAPIView(generics.CreateAPIView):
-    queryset = Profile.objects.all()
+class LoginOTPAPIView(MyApiView):
     serializer_class = OTPSerializer
-    # lookup_field = 'user'
+    queryset = Profile.objects.all()
 
-    def create(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         profile = self.queryset.get(user=get_user_model().objects.get(phone=kwargs.get('phone')))
@@ -205,17 +180,54 @@ class LoginAPIView(generics.CreateAPIView):
             if timedelta.seconds < settings.OTP_LIFETIME:
                 if profile.otpattempts > 0:
                     if int(request.data.get('otp')) == profile.otp:
-                        print('must login')
                         login(self.request, user=profile.user)
                     else:
-                        raise ValidationError(f'Введены не корректные данные')
+                        return Response({'detail': 'Не корректный пароль!'},
+                                        status=status.HTTP_401_UNAUTHORIZED)
                 else:
-                    raise ValidationError(f'Исчерпано количество попыток!')
+                    return Response({'detail': 'Исчерпано количество попыток!'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
             else:
-                raise ValidationError(f'Время жизни пароля истекло!')
+                return Response({'detail': 'Время жизни пароля истекло!'}, status=status.HTTP_408_REQUEST_TIMEOUT)
         except Exception as err:
-            raise ValidationError(f'Ошибка регистрации {err}')
+            return Response({'detail': f'Ошибка регистрации {err}'}, status=status.HTTP_400_BAD_REQUEST)
 
         headers = self.get_success_headers(serializer.data)
-        print(dict(serializer.data))
-        return Response({'detail': 'login succesful'}, status=status.HTTP_200_OK, headers=headers)
+        return Response({'detail': 'login successful'}, status=status.HTTP_200_OK, headers=headers)
+
+
+class LoginOrCreateAPIView(MyApiView):
+    serializer_class = LoginUserSerializer
+    queryset = Profile.objects.all()
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone = serializer.data.get('phone')
+        user = get_user_model().objects.filter(phone=phone).first()
+        profile = Profile.objects.filter(user=user).first()
+        if not profile:  # если профиля с таким номером нет, то проверяем приглашение
+            try:
+                user = get_user_model().objects.create(phone=phone)
+                profile = Profile.objects.create(user=user)
+            except Exception as err:
+                return Response({'detail': f'Ошибка регистрации {err}'}, status=status.HTTP_400_BAD_REQUEST)
+        if last_otp_time := profile.otptime:
+            timedelta = datetime.datetime.utcnow() - last_otp_time.replace(tzinfo=None)
+        else:
+            timedelta = datetime.timedelta(seconds=settings.OTP_RETRY_TIMEOUT+1)
+        if not last_otp_time or timedelta.seconds > settings.OTP_RETRY_TIMEOUT:
+            profile.otp = random.randint(999, 9999)
+            profile.otptime = datetime.datetime.utcnow()
+            profile.otpattempts = settings.OTP_ATTEMPTS
+            profile.save()
+            sender = OtpSender(user.phone, profile.otp).send_otp_on_phone()
+
+        else:
+            return Response({'detail': 'Превышено время повторной выдачи пароля. Попробуйте позже!'},
+                            status=status.HTTP_429_TOO_MANY_REQUESTS)
+        headers = self.get_success_headers(serializer.data)
+
+        return Response({'detail': f'your OTP is {profile.otp}',
+                         'login_url': f'{reverse_lazy("OTPLogin", args=[phone])}'},
+                        status=status.HTTP_200_OK, headers=headers)
+

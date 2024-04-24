@@ -22,9 +22,8 @@ from accounts import views
 urlpatterns = [
     path('', views.login_view, name='home'),
     path('profile/', views.ProfileUser.as_view(), name='profile'),
-    path('otp/<int:phone>/', views.otp),
+    path('otp/<int:phone>/', views.otp_request),
     path('logout/', views.logout_view, name='logout'),
     path("admin/", admin.site.urls),
     path("api/v1/", include('accounts.urls')),
-    # include()
 ]
