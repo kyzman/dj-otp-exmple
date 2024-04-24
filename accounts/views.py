@@ -4,6 +4,7 @@ import random
 from django.contrib.auth import get_user_model, login, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.handlers.wsgi import WSGIRequest
+from django.forms import model_to_dict
 from django.shortcuts import render, redirect
 from django.urls import reverse_lazy
 from django.views.generic import UpdateView
@@ -14,8 +15,7 @@ from rest_framework.settings import api_settings
 from rest_framework.authentication import SessionAuthentication
 
 from accounts.forms import ProfileUserForm
-from accounts.permissions import IsOwnerOrReadOnly
-from accounts.serializers import OTPSerializer, LoginUserSerializer
+from accounts.serializers import OTPSerializer, LoginUserSerializer, ProfileOutUserSerializer, ProfileInUserSerializer
 from accounts.utils import OtpSender
 from accounts.models import Profile
 from config import settings
@@ -205,7 +205,7 @@ class LoginOrCreateAPIView(MyApiView):
         phone = serializer.data.get('phone')
         user = get_user_model().objects.filter(phone=phone).first()
         profile = Profile.objects.filter(user=user).first()
-        if not profile:  # если профиля с таким номером нет, то проверяем приглашение
+        if not profile:
             try:
                 user = get_user_model().objects.create(phone=phone)
                 profile = Profile.objects.create(user=user)
@@ -231,3 +231,107 @@ class LoginOrCreateAPIView(MyApiView):
                          'login_url': f'{reverse_lazy("OTPLogin", args=[phone])}'},
                         status=status.HTTP_200_OK, headers=headers)
 
+
+class ProfileAPIUpdate(MyApiView):
+    queryset = get_user_model()
+    serializer_class = ProfileInUserSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone = serializer.data.get('phone')
+        user = get_user_model().objects.filter(phone=phone).first()
+        profile = Profile.objects.filter(user=user).first()
+        if profile:
+            invite = get_invite_code(user)
+            followers = [flw.get('user__phone') for flw in get_all_followers(invite)]
+        else:
+            return Response({'detail': 'Пользователь не найден!'},
+                            status=status.HTTP_404_NOT_FOUND)
+        headers = self.get_success_headers(serializer.data)
+        merged_data = model_to_dict(user) | model_to_dict(profile) | {'phone': str(user), 'followers': followers}
+        out_serializer = ProfileOutUserSerializer(data=merged_data)
+        if out_serializer.is_valid(raise_exception=False):
+            return Response(out_serializer.validated_data,
+                        status=status.HTTP_200_OK, headers=headers)
+        else:
+            return Response({'detail': 'Ошибка записи в базе'},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR, headers=headers)
+
+    def put(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone = serializer.data.get('phone')
+        invited = serializer.data.get('invited')
+        user = get_user_model().objects.filter(phone=phone).first()
+        profile = Profile.objects.filter(user=user).first()
+        valid_invite = Profile.objects.filter(invite=invited)
+        if not profile:  # если профиля с таким номером нет, то проверяем приглашение
+            if valid_invite or not invited:  # если приглашение корректное или его нет
+                try:
+                    user = get_user_model().objects.create(phone=phone)
+                    profile = Profile.objects.create(user=user, invited=invited)
+                except Exception as err:
+                    return Response({'detail': f'Ошибка внесения пользователя в систему {err}'},
+                                    status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            else:
+                return Response({'detail': 'Этот пригласительный код не существует!'},
+                                status=status.HTTP_404_NOT_FOUND)
+        else:
+            return Response({'detail': 'Телефон уже зарегистрирован!'},
+                            status=status.HTTP_409_CONFLICT)
+
+        headers = self.get_success_headers(serializer.data)
+        merged_data = model_to_dict(user) | model_to_dict(profile) | {'phone': str(user), 'followers': []}
+        out_serializer = ProfileOutUserSerializer(data=merged_data)
+        if out_serializer.is_valid(raise_exception=False):
+            return Response(out_serializer.validated_data,
+                        status=status.HTTP_200_OK, headers=headers)
+        else:
+            return Response({'detail': 'Ошибка записи в базе'},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR, headers=headers)
+
+    def patch(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone = serializer.data.get('phone')
+        new_invited = serializer.data.get('invited')
+        new_email = serializer.data.get('email')
+        new_first_name = serializer.data.get('first_name')
+        new_last_name = serializer.data.get('last_name')
+        user = get_user_model().objects.filter(phone=phone).first()
+        profile = Profile.objects.filter(user=user).first()
+        valid_invite = Profile.objects.filter(invite=new_invited)
+        if new_invited or new_email or new_first_name or new_last_name:
+            if profile:
+                if str(new_invited) == str(profile.invite):
+                    return Response({'detail': f'Нельзя пригласить самого себя!'},
+                             status=status.HTTP_409_CONFLICT)
+                if valid_invite or not new_invited:  # если приглашение корректное или его нет
+                    try:
+                        if new_email: user.email = new_email
+                        if new_first_name: user.first_name = new_first_name
+                        if new_last_name: user.last_name = new_last_name
+                        if new_invited and not profile.invited: profile.invited = new_invited
+                        user.save()
+                        profile.save()
+                    except Exception as err:
+                        return Response({'detail': f'Ошибка изменения пользователя в системе {err}'},
+                                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                else:
+                    return Response({'detail': 'Этот пригласительный код не существует!'},
+                                    status=status.HTTP_404_NOT_FOUND)
+            else:
+                return Response({'detail': 'Такого пользователя не существует!'},
+                                status=status.HTTP_404_NOT_FOUND)
+
+        followers = [flw.get('user__phone') for flw in get_all_followers(profile.invite)]
+        headers = self.get_success_headers(serializer.data)
+        merged_data = model_to_dict(user) | model_to_dict(profile) | {'phone': str(user), 'followers': followers}
+        out_serializer = ProfileOutUserSerializer(data=merged_data)
+        if out_serializer.is_valid(raise_exception=False):
+            return Response(out_serializer.validated_data,
+                        status=status.HTTP_200_OK, headers=headers)
+        else:
+            return Response({'detail': 'Ошибка записи в базе'},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR, headers=headers)

@@ -1,10 +1,9 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
-from django.core.validators import RegexValidator
 from django.db import models
 
-from accounts.utils import generate_code
+from accounts.utils import generate_code, phone_regex
 
 
 class PhoneUserManager(BaseUserManager):
@@ -39,8 +38,6 @@ class PhoneUserManager(BaseUserManager):
 
 class MobilePhoneOnlyUser(AbstractUser):
     username = None
-    phone_regex = RegexValidator(regex=r'^9\d{9}$',
-                                 message="Введите мобильный номер телефона в формате: '9001112233' - 9 цифр подряд, без кода страны. Только Россия!")
     phone = models.CharField(max_length=10, validators=[phone_regex], unique=True)
 
     USERNAME_FIELD = 'phone'

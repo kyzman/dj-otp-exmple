@@ -2,6 +2,11 @@ import random
 from typing import NoReturn
 from string import ascii_lowercase, digits
 
+from django.core.validators import RegexValidator
+
+phone_regex = RegexValidator(regex=r'^9\d{9}$',
+                             message="Введите мобильный номер телефона в формате: '9001112233' - 9 цифр подряд, без кода страны. Только Россия!")
+
 
 class OtpSender:
     phone = None
