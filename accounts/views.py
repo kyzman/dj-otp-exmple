@@ -263,13 +263,16 @@ class ProfileAPIUpdate(MyApiView):
         serializer.is_valid(raise_exception=True)
         phone = serializer.data.get('phone')
         invited = serializer.data.get('invited')
+        email = serializer.data.get('email', None)
+        first_name = serializer.data.get('first_name', None)
+        last_name = serializer.data.get('last_name', None)
         user = get_user_model().objects.filter(phone=phone).first()
         profile = Profile.objects.filter(user=user).first()
         valid_invite = Profile.objects.filter(invite=invited)
         if not profile:  # если профиля с таким номером нет, то проверяем приглашение
             if valid_invite or not invited:  # если приглашение корректное или его нет
                 try:
-                    user = get_user_model().objects.create(phone=phone)
+                    user = get_user_model().objects.create(phone=phone, email=email, first_name=first_name, last_name=last_name)
                     profile = Profile.objects.create(user=user, invited=invited)
                 except Exception as err:
                     return Response({'detail': f'Ошибка внесения пользователя в систему {err}'},
