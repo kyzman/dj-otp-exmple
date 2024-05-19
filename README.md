@@ -38,3 +38,4 @@ python manage.py migrate
 ```shell
 python manage.py runserver
 ```
+вавыава<>DOM

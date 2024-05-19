@@ -25,6 +25,13 @@ def get_invite_code(user) -> str:
     return Profile.objects.get(user=user).invite
 
 
+def get_ava_url(user) -> str:
+    if ava := Profile.objects.get(user=user).avatar:
+        return ava.url
+    else:
+        return "None"
+
+
 def get_invited(user) -> str:
     return Profile.objects.get(user=user).invited
 
@@ -103,6 +110,7 @@ class ProfileUser(LoginRequiredMixin, UpdateView):
         context = super(ProfileUser, self).get_context_data(**kwargs)
         context['invite'] = get_invite_code(self.request.user)
         context['followers'] = get_all_followers(context['invite'])
+        context['urlava'] = f"{self.request.scheme}://{self.request.get_host()}{get_ava_url(self.request.user)}"
         return context
 
     def get_initial(self):

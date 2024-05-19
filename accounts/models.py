@@ -54,6 +54,7 @@ class MobilePhoneOnlyUser(AbstractUser):
 class Profile(models.Model):
     user = models.OneToOneField(get_user_model(), on_delete=models.CASCADE, related_name='Profile')
     otp = models.IntegerField(null=True, blank=True)
+    avatar = models.ImageField(upload_to='avatars/')
     otptime = models.DateTimeField(null=True, blank=True)
     otpattempts = models.IntegerField(null=True, blank=True)
     invite = models.CharField(max_length=6, unique=True, default=generate_code)
